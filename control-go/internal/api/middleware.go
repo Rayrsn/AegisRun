@@ -334,8 +334,17 @@ func writeJSONError(w http.ResponseWriter, statusCode int, msg string) {
 }
 
 func writeJSON(w http.ResponseWriter, statusCode int, payload any) {
+	body, err := json.Marshal(payload)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
 	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Content-Length", strconv.Itoa(len(body)))
 	w.WriteHeader(statusCode)
-	_ = json.NewEncoder(w).Encode(payload)
+	_, _ = w.Write(body)
+	if f, ok := w.(http.Flusher); ok {
+		f.Flush()
+	}
 }
 
