@@ -342,9 +342,9 @@ func (s *PostgresStore) DecideApproval(ctx context.Context, tokenHash, decision,
 	const updateExecQ = `
 		UPDATE executions
 		SET
-			status = $2,
+			status = $2::varchar,
 			approved_by = $3,
-			completed_at = CASE WHEN $2 = 'REJECTED' THEN NOW() ELSE completed_at END
+			completed_at = CASE WHEN $2::text = 'REJECTED' THEN NOW() ELSE completed_at END
 		WHERE id = $1
 	`
 	if _, err := tx.Exec(ctx, updateExecQ, rec.ExecutionID, nextStatus, decidedBy); err != nil {
