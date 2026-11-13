@@ -44,9 +44,11 @@ func main() {
 	defer pgStore.Close()
 
 	rdb := redis.NewClient(&redis.Options{
-		Addr:     cfg.RedisAddr,
-		Password: cfg.RedisPassword,
-		DB:       cfg.RedisDB,
+		Addr:         cfg.RedisAddr,
+		Password:     cfg.RedisPassword,
+		DB:           cfg.RedisDB,
+		PoolSize:     256,
+		MinIdleConns: 64,
 	})
 	defer func() { _ = rdb.Close() }()
 
