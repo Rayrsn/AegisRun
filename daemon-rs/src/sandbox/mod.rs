@@ -78,7 +78,14 @@ impl ActiveExecutionRegistry {
 static EXEC_SEMAPHORE: std::sync::OnceLock<tokio::sync::Semaphore> = std::sync::OnceLock::new();
 
 fn execution_semaphore() -> &'static tokio::sync::Semaphore {
-    EXEC_SEMAPHORE.get_or_init(|| tokio::sync::Semaphore::new(16))
+    EXEC_SEMAPHORE.get_or_init(|| {
+        let permits = std::env::var("AEGIS_EXEC_CONCURRENCY")
+            .ok()
+            .and_then(|v| v.parse::<usize>().ok())
+            .filter(|&n| n > 0)
+            .unwrap_or(8);
+        tokio::sync::Semaphore::new(permits)
+    })
 }
 
 /// Closes the sandbox execution concurrency gate so queued tasks abort cleanly during shutdown.
