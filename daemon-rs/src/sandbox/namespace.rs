@@ -2,11 +2,15 @@ use std::collections::HashMap;
 use std::ffi::CString;
 use std::os::fd::RawFd;
 use std::ptr;
+use std::sync::Mutex;
 
 use crate::error::SandboxError;
 use crate::sandbox::cgroup_v2::CgroupManager;
 use crate::sandbox::fs_mount::{EphemeralMounts, SANDBOX_GID, SANDBOX_UID};
 use crate::sandbox::seccomp::{apply_seccomp_filter, build_seccomp_filter};
+
+// Serialize pipe creation through parent sync_w close so concurrent clone() calls cannot inherit each other's sync_w/err_w FDs.
+static SPAWN_LOCK: Mutex<()> = Mutex::new(());
 
 const IFF_UP: libc::c_short = 0x1;
 const IFF_RUNNING: libc::c_short = 0x40;
@@ -33,6 +37,7 @@ pub fn spawn_isolated_process(
     env_vars: &HashMap<String, String>,
     enable_loopback_only: bool,
 ) -> Result<SpawnedProcess, SandboxError> {
+    let spawn_guard = SPAWN_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let (stdin_r, stdin_w) = create_cloexec_pipe()?;
     let (stdout_r, stdout_w) = create_cloexec_pipe()?;
     let (stderr_r, stderr_w) = create_cloexec_pipe()?;
@@ -145,8 +150,9 @@ pub fn spawn_isolated_process(
         return Err(err);
     }
 
-    // Wake child by closing sync_w.
+    // Wake child by closing sync_w, then release SPAWN_LOCK before waiting on execve status.
     close_fds(&[sync_w]);
+    drop(spawn_guard);
 
     // Wait for child execve (EOF on err_r) or failure payload ([step, errno]).
     let mut err_buf = [0i32; 2];
@@ -206,16 +212,7 @@ unsafe fn child_setup_and_exec(
 ) -> ! {
     close_fds(&[stdin_w, stdout_r, stderr_r, sync_w, err_r]);
 
-    // Wait for parent cgroup enrollment signal (EOF on sync_r).
-    let mut sync_byte = [0u8; 1];
-    while libc::read(sync_r, sync_byte.as_mut_ptr() as *mut libc::c_void, 1) < 0 {
-        if last_errno() != libc::EINTR {
-            break;
-        }
-    }
-    libc::close(sync_r);
-
-    // Wire stdio pipes.
+    // Wire stdio pipes first so stdin_r, stdout_w, stderr_w can be closed before waiting on sync_r.
     if libc::dup2(stdin_r, libc::STDIN_FILENO) < 0
         || libc::dup2(stdout_w, libc::STDOUT_FILENO) < 0
         || libc::dup2(stderr_w, libc::STDERR_FILENO) < 0
@@ -224,12 +221,21 @@ unsafe fn child_setup_and_exec(
     }
     close_fds(&[stdin_r, stdout_w, stderr_w]);
 
-    // Close any inherited descriptors >= 3 except err_w (which has FD_CLOEXEC).
+    // Close any inherited descriptors >= 3 except sync_r and err_w BEFORE blocking on sync_r.
     for fd in 3..1024 {
-        if fd != err_w {
+        if fd != sync_r && fd != err_w {
             libc::close(fd);
         }
     }
+
+    // Wait for parent cgroup enrollment signal (EOF on sync_r).
+    let mut sync_byte = [0u8; 1];
+    while libc::read(sync_r, sync_byte.as_mut_ptr() as *mut libc::c_void, 1) < 0 {
+        if last_errno() != libc::EINTR {
+            break;
+        }
+    }
+    libc::close(sync_r);
 
     if enable_loopback_only {
         if let Err(e) = bring_up_loopback() {

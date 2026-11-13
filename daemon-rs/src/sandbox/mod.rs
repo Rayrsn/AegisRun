@@ -229,7 +229,7 @@ pub async fn execute_in_sandbox(
     )
     .await;
 
-    let teardown_res = guard.teardown();
+    let teardown_res = tokio::task::block_in_place(|| guard.teardown());
 
     match (outcome, teardown_res) {
         (
@@ -355,46 +355,55 @@ async fn run_stages(
     let runtime = RuntimeType::try_from(req.runtime).unwrap_or(RuntimeType::Unspecified);
     let limits = normalize_limits(req);
 
-    // Stage 1 & 2 & 3/4: Setup mounts, cgroup, and spawn isolated process.
-    let setup_start = Instant::now();
-    let mounts = fs_mount::setup_mounts(
-        config,
-        execution_id,
-        runtime,
-        &req.entrypoint_code,
-        limits.tmpfs_size_bytes,
-    )?;
-    guard.mounts = Some(mounts);
+    // Stage 1 & 2 & 3/4: Setup mounts, cgroup, and spawn isolated process off the async poller.
+    let (setup_duration_us, exec_start, spawned) = tokio::task::block_in_place(
+        || -> Result<(u64, Instant, namespace::SpawnedProcess), SandboxError> {
+            let setup_start = Instant::now();
+            let mounts = fs_mount::setup_mounts(
+                config,
+                execution_id,
+                runtime,
+                &req.entrypoint_code,
+                limits.tmpfs_size_bytes,
+            )?;
+            guard.mounts = Some(mounts);
 
-    let cgroup = CgroupManager::create(
-        &config.cgroup_slice,
-        execution_id,
-        limits.memory_max_bytes,
-        limits.cpu_quota_us,
-        limits.pids_max,
-    )?;
-    registry.register(execution_id, cgroup.cgroup_dir().to_path_buf());
-    guard.cgroup = Some(cgroup);
+            let cgroup = CgroupManager::create(
+                &config.cgroup_slice,
+                execution_id,
+                limits.memory_max_bytes,
+                limits.cpu_quota_us,
+                limits.pids_max,
+            )?;
+            registry.register(execution_id, cgroup.cgroup_dir().to_path_buf());
+            guard.cgroup = Some(cgroup);
 
-    let mounts_ref = guard
-        .mounts
-        .as_ref()
-        .ok_or_else(|| SandboxError::TeardownFailed("mounts missing".to_string()))?;
+            let mounts_ref = guard
+                .mounts
+                .as_ref()
+                .ok_or_else(|| SandboxError::TeardownFailed("mounts missing".to_string()))?;
+            let cgroup_ref = guard
+                .cgroup
+                .as_ref()
+                .ok_or_else(|| SandboxError::TeardownFailed("cgroup missing".to_string()))?;
+
+            let setup_duration_us = setup_start.elapsed().as_micros() as u64;
+
+            let exec_start = Instant::now();
+            let spawned = namespace::spawn_isolated_process(
+                mounts_ref,
+                cgroup_ref,
+                &req.env_vars,
+                req.enable_loopback_only,
+            )?;
+            Ok((setup_duration_us, exec_start, spawned))
+        },
+    )?;
+    guard.child_pid = Some(spawned.pid);
     let cgroup_ref = guard
         .cgroup
         .as_ref()
         .ok_or_else(|| SandboxError::TeardownFailed("cgroup missing".to_string()))?;
-
-    let setup_duration_us = setup_start.elapsed().as_micros() as u64;
-
-    let exec_start = Instant::now();
-    let spawned = namespace::spawn_isolated_process(
-        mounts_ref,
-        cgroup_ref,
-        &req.env_vars,
-        req.enable_loopback_only,
-    )?;
-    guard.child_pid = Some(spawned.pid);
 
     let started_ev = ExecutionEvent {
         execution_id: execution_id.to_string(),
