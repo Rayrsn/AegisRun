@@ -709,7 +709,9 @@ func (e *Engine) executeAndFinalize(ctx context.Context, payload *store.PendingE
 		}
 		worker, selErr := e.scheduler.SelectWorker(exclude)
 		if selErr != nil {
-			lastErr = selErr
+			if lastErr == nil {
+				lastErr = selErr
+			}
 			break
 		}
 

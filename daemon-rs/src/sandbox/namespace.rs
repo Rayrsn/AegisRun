@@ -367,7 +367,9 @@ unsafe fn child_setup_and_exec(
     }
 
     // Drop supplementary groups and all Linux bounding capabilities.
-    if libc::setgroups(0, ptr::null()) != 0 {
+    // Use raw SYS_setgroups / SYS_setresgid / SYS_setresuid syscalls to bypass glibc's
+    // multi-threaded __nptl_setxid futex lock in a raw SYS_clone child.
+    if libc::syscall(libc::SYS_setgroups, 0usize, ptr::null::<libc::gid_t>()) != 0 {
         fail_child(err_w, 18, last_errno());
     }
     for cap in 0..=63 {
@@ -380,10 +382,10 @@ unsafe fn child_setup_and_exec(
     }
 
     // Drop to unprivileged UID/GID 10000.
-    if libc::setresgid(SANDBOX_GID, SANDBOX_GID, SANDBOX_GID) != 0 {
+    if libc::syscall(libc::SYS_setresgid, SANDBOX_GID, SANDBOX_GID, SANDBOX_GID) != 0 {
         fail_child(err_w, 20, last_errno());
     }
-    if libc::setresuid(SANDBOX_UID, SANDBOX_UID, SANDBOX_UID) != 0 {
+    if libc::syscall(libc::SYS_setresuid, SANDBOX_UID, SANDBOX_UID, SANDBOX_UID) != 0 {
         fail_child(err_w, 21, last_errno());
     }
 
