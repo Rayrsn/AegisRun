@@ -78,6 +78,48 @@ end
 return redis.call("DECR", KEYS[1])
 `)
 
+var rateAndActiveAcquireScript = redis.NewScript(`
+local rate = tonumber(ARGV[1])
+local burst = tonumber(ARGV[2])
+local now_ms = tonumber(ARGV[3])
+local requested = tonumber(ARGV[4])
+local limit = tonumber(ARGV[5])
+local active_ttl = tonumber(ARGV[6])
+
+local data = redis.call("HMGET", KEYS[1], "tokens", "last_refill_ms")
+local tokens = tonumber(data[1])
+local last_ms = tonumber(data[2])
+
+if not tokens or not last_ms then
+	tokens = burst
+	last_ms = now_ms
+else
+	local elapsed_sec = math.max(0, (now_ms - last_ms) / 1000.0)
+	tokens = math.min(burst, tokens + elapsed_sec * rate)
+	last_ms = now_ms
+end
+
+if tokens < requested then
+	local missing = requested - tokens
+	local retry_ms = math.ceil((missing / rate) * 1000.0)
+	redis.call("HSET", KEYS[1], "tokens", string.format("%.6f", tokens), "last_refill_ms", tostring(last_ms))
+	redis.call("EXPIRE", KEYS[1], 120)
+	return {-1, retry_ms, 0}
+end
+
+tokens = tokens - requested
+redis.call("HSET", KEYS[1], "tokens", string.format("%.6f", tokens), "last_refill_ms", tostring(last_ms))
+redis.call("EXPIRE", KEYS[1], 120)
+
+local cur = tonumber(redis.call("GET", KEYS[2]) or "0")
+if cur >= limit then
+	return {-2, 0, cur}
+end
+local next_val = redis.call("INCR", KEYS[2])
+redis.call("EXPIRE", KEYS[2], active_ttl)
+return {1, 0, next_val}
+`)
+
 // TenantFromContext retrieves the authenticated tenant ID injected by BearerAuth middleware.
 func TenantFromContext(ctx context.Context) string {
 	v, _ := ctx.Value(ctxTenantKey).(string)
@@ -200,20 +242,27 @@ func RateLimitAndConcurrencyMiddleware(cfg RateLimiterConfig, next http.Handler)
 			tenantID = "default"
 		}
 
-		if cfg.RequestsPerSecond > 0 && cfg.Burst > 0 {
-			rlKey := "aegis:rl:" + tenantID
+		rateEnabled := cfg.RequestsPerSecond > 0 && cfg.Burst > 0
+		activeEnabled := cfg.MaxActivePerTenant > 0
+		rlKey := "aegis:rl:" + tenantID
+		activeKey := "aegis:active_count:" + tenantID
+		var activeAcquired bool
+
+		if rateEnabled && activeEnabled {
 			nowMs := time.Now().UnixMilli()
-			res, err := tokenBucketScript.Run(r.Context(), cfg.Redis, []string{rlKey},
+			res, err := rateAndActiveAcquireScript.Run(r.Context(), cfg.Redis, []string{rlKey, activeKey},
 				strconv.FormatFloat(cfg.RequestsPerSecond, 'f', 4, 64),
 				strconv.FormatFloat(cfg.Burst, 'f', 4, 64),
 				strconv.FormatInt(nowMs, 10),
 				"1",
+				strconv.FormatInt(cfg.MaxActivePerTenant, 10),
+				"300",
 			).Int64Slice()
 			if err != nil {
 				writeJSONError(w, http.StatusServiceUnavailable, "rate limiter backend unavailable")
 				return
 			}
-			if len(res) == 2 && res[0] == 0 {
+			if len(res) >= 2 && res[0] == -1 {
 				retrySec := int(math.Ceil(float64(res[1]) / 1000.0))
 				if retrySec < 1 {
 					retrySec = 1
@@ -222,26 +271,54 @@ func RateLimitAndConcurrencyMiddleware(cfg RateLimiterConfig, next http.Handler)
 				writeJSONError(w, http.StatusTooManyRequests, "tenant rate limit exceeded")
 				return
 			}
-		}
-
-		var activeAcquired bool
-		activeKey := "aegis:active_count:" + tenantID
-		if cfg.MaxActivePerTenant > 0 {
-			res, err := activeAcquireScript.Run(r.Context(), cfg.Redis, []string{activeKey},
-				strconv.FormatInt(cfg.MaxActivePerTenant, 10),
-				"300",
-			).Int64Slice()
-			if err != nil {
-				writeJSONError(w, http.StatusServiceUnavailable, "concurrency limiter backend unavailable")
-				return
-			}
-			if len(res) == 2 && res[0] == 0 {
+			if len(res) >= 1 && res[0] == -2 {
 				w.Header().Set("Retry-After", "1")
 				writeJSONError(w, http.StatusTooManyRequests, "tenant max concurrent executions exceeded")
 				return
 			}
 			activeAcquired = true
+		} else {
+			if rateEnabled {
+				nowMs := time.Now().UnixMilli()
+				res, err := tokenBucketScript.Run(r.Context(), cfg.Redis, []string{rlKey},
+					strconv.FormatFloat(cfg.RequestsPerSecond, 'f', 4, 64),
+					strconv.FormatFloat(cfg.Burst, 'f', 4, 64),
+					strconv.FormatInt(nowMs, 10),
+					"1",
+				).Int64Slice()
+				if err != nil {
+					writeJSONError(w, http.StatusServiceUnavailable, "rate limiter backend unavailable")
+					return
+				}
+				if len(res) == 2 && res[0] == 0 {
+					retrySec := int(math.Ceil(float64(res[1]) / 1000.0))
+					if retrySec < 1 {
+						retrySec = 1
+					}
+					w.Header().Set("Retry-After", strconv.Itoa(retrySec))
+					writeJSONError(w, http.StatusTooManyRequests, "tenant rate limit exceeded")
+					return
+				}
+			}
+
+			if activeEnabled {
+				res, err := activeAcquireScript.Run(r.Context(), cfg.Redis, []string{activeKey},
+					strconv.FormatInt(cfg.MaxActivePerTenant, 10),
+					"300",
+				).Int64Slice()
+				if err != nil {
+					writeJSONError(w, http.StatusServiceUnavailable, "concurrency limiter backend unavailable")
+					return
+				}
+				if len(res) == 2 && res[0] == 0 {
+					w.Header().Set("Retry-After", "1")
+					writeJSONError(w, http.StatusTooManyRequests, "tenant max concurrent executions exceeded")
+					return
+				}
+				activeAcquired = true
+			}
 		}
+
 		if activeAcquired {
 			defer func() {
 				_, _ = activeReleaseScript.Run(context.Background(), cfg.Redis, []string{activeKey}).Result()
