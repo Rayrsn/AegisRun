@@ -38,15 +38,58 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     spawn_metrics_server(Arc::clone(&config), Arc::clone(&metrics));
 
     let grpc_addr: SocketAddr = config.grpc_listen_addr.parse()?;
-    let service = SandboxWorkerService::new(config, metrics, registry);
+    let service = SandboxWorkerService::new(config, Arc::clone(&metrics), Arc::clone(&registry));
 
     info!(%grpc_addr, "SandboxWorker gRPC server listening");
     Server::builder()
         .add_service(SandboxWorkerServer::new(service))
-        .serve(grpc_addr)
+        .serve_with_shutdown(grpc_addr, shutdown_signal())
         .await?;
 
+    info!("shutdown signal received; draining active sandboxes");
+    daemon_rs::sandbox::close_execution_gate();
+    registry.cancel_all();
+    for _ in 0..200 {
+        if metrics
+            .active_sandboxes
+            .load(std::sync::atomic::Ordering::SeqCst)
+            == 0
+        {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(25)).await;
+    }
+    info!(
+        remaining_sandboxes = metrics
+            .active_sandboxes
+            .load(std::sync::atomic::Ordering::SeqCst),
+        "daemon shutdown complete"
+    );
+
     Ok(())
+}
+
+async fn shutdown_signal() {
+    let ctrl_c = async {
+        let _ = tokio::signal::ctrl_c().await;
+    };
+    #[cfg(unix)]
+    let terminate = async {
+        if let Ok(mut sig) =
+            tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+        {
+            sig.recv().await;
+        } else {
+            std::future::pending::<()>().await;
+        }
+    };
+    #[cfg(not(unix))]
+    let terminate = std::future::pending::<()>();
+
+    tokio::select! {
+        _ = ctrl_c => {}
+        _ = terminate => {}
+    }
 }
 
 fn spawn_metrics_server(config: Arc<DaemonConfig>, metrics: Arc<DaemonMetrics>) {

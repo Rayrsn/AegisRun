@@ -59,6 +59,31 @@ impl ActiveExecutionRegistry {
         }
         Ok(false)
     }
+
+    /// Terminates every active execution cgroup during daemon shutdown.
+    pub fn cancel_all(&self) {
+        let dirs: Vec<PathBuf> = match self.cgroups.lock() {
+            Ok(guard) => guard.values().cloned().collect(),
+            Err(poisoned) => poisoned.into_inner().values().cloned().collect(),
+        };
+        for dir in dirs {
+            let kill_path = dir.join("cgroup.kill");
+            if kill_path.exists() {
+                let _ = std::fs::write(&kill_path, b"1");
+            }
+        }
+    }
+}
+
+static EXEC_SEMAPHORE: std::sync::OnceLock<tokio::sync::Semaphore> = std::sync::OnceLock::new();
+
+fn execution_semaphore() -> &'static tokio::sync::Semaphore {
+    EXEC_SEMAPHORE.get_or_init(|| tokio::sync::Semaphore::new(16))
+}
+
+/// Closes the sandbox execution concurrency gate so queued tasks abort cleanly during shutdown.
+pub fn close_execution_gate() {
+    execution_semaphore().close();
 }
 
 /// Deterministic RAII guard ensuring cgroup kill, unmount, and cgroup removal even on cancellation.
@@ -213,6 +238,20 @@ pub async fn execute_in_sandbox(
     };
 
     let _active_guard = ActiveCounterGuard::new(Arc::clone(&metrics));
+    let Ok(exec_permit) = execution_semaphore().acquire().await else {
+        metrics.executions_error.fetch_add(1, Ordering::Relaxed);
+        let terminal = ExecutionEvent {
+            execution_id,
+            sequence_num: 1,
+            timestamp_ns: 0,
+            event_type: EventType::InternalError as i32,
+            chunk_data: Vec::new(),
+            metrics: None,
+            error_message: "daemon shutting down".to_string(),
+        };
+        let _ = event_tx.send(Ok(terminal)).await;
+        return;
+    };
     let mut guard = SandboxGuard::new(execution_id.clone(), Arc::clone(&registry));
     let overall_start = Instant::now();
     let seq_counter = Arc::new(AtomicU64::new(1));
@@ -230,6 +269,7 @@ pub async fn execute_in_sandbox(
     .await;
 
     let teardown_res = tokio::task::block_in_place(|| guard.teardown());
+    drop(exec_permit);
 
     match (outcome, teardown_res) {
         (
