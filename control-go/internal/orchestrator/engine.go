@@ -201,7 +201,7 @@ func (e *Engine) HandleExpiredApprovals(ctx context.Context, execIDs []string) {
 			ErrorMessage: "approval request expired",
 		}
 		_ = e.locker.Complete(ctx, rec.IdempotencyKey, execID, resp)
-		e.metrics.RecordExecution("REJECTED", rec.Runtime, 0, 0)
+		e.metrics.RecordExecution("REJECTED", rec.Runtime, rec.TenantID, 0, 0, 0)
 	}
 }
 
@@ -318,6 +318,7 @@ func (e *Engine) SubmitExecution(ctx context.Context, tenantID string, req Execu
 	switch acq.Outcome {
 	case idempotency.OutcomeCompleted:
 		e.metrics.RecordIdempotency("cached_replay")
+		e.metrics.RecordIdempotentReplay(normRuntime, tenantID)
 		resp := acq.Record.CachedResponse
 		if resp == nil {
 			resp = &store.ExecutionResponse{
@@ -574,19 +575,21 @@ func (e *Engine) DecideApproval(ctx context.Context, rawToken, decision, decided
 		_ = e.broker.DeletePendingPayload(ctx, rec.ExecutionID)
 
 		seq := uint64(2)
-		var runtimeName, toolName, idempKey string
+		var runtimeName, toolName, tenantID, idempKey string
 		if payload != nil {
 			seq = payload.BaseSeq + 1
 			runtimeName = payload.Runtime
 			toolName = payload.ToolName
+			tenantID = payload.TenantID
 			idempKey = payload.IdempotencyKey
 		} else if execRec, getErr := e.store.GetExecution(ctx, rec.ExecutionID); getErr == nil {
 			runtimeName = execRec.Runtime
 			toolName = execRec.ToolName
+			tenantID = execRec.TenantID
 			idempKey = execRec.IdempotencyKey
 		}
 
-		e.metrics.RecordExecution("REJECTED", runtimeName, 0, 0)
+		e.metrics.RecordExecution("REJECTED", runtimeName, tenantID, 0, 0, 0)
 		resp := &store.ExecutionResponse{
 			ExecutionID:  rec.ExecutionID,
 			Status:       "REJECTED",
@@ -864,7 +867,7 @@ func (e *Engine) failBeforeStart(ctx context.Context, payload *store.PendingExec
 		StderrTail: []byte(errMsg),
 	})
 	_ = e.locker.Release(ctx, payload.IdempotencyKey, payload.ExecutionID)
-	e.metrics.RecordExecution("FAILED", payload.Runtime, 0, 0)
+	e.metrics.RecordExecution("FAILED", payload.Runtime, payload.TenantID, 0, 0, 0)
 
 	_ = e.broker.Publish(ctx, &store.StreamEvent{
 		ExecutionID:  payload.ExecutionID,
@@ -950,7 +953,7 @@ func (e *Engine) finalizeTerminal(
 	// Cache every post-STARTED terminal outcome (including FAILED/OOM/TIMEOUT) so side effects are not re-executed.
 	_ = e.locker.Complete(ctx, payload.IdempotencyKey, payload.ExecutionID, resp)
 
-	e.metrics.RecordExecution(sqlStatus, payload.Runtime, setupUs, execUs)
+	e.metrics.RecordExecution(sqlStatus, payload.Runtime, payload.TenantID, setupUs, execUs, teardownUs)
 
 	if tsNs == 0 {
 		tsNs = uint64(time.Now().UnixNano())

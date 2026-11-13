@@ -208,7 +208,7 @@ func (p *WorkerPool) applyHeartbeat(workerID string, hb *pb.WorkerHeartbeat) {
 	}
 	p.mu.Unlock()
 
-	p.metrics.SetWorkerActiveSandboxes(workerID, hb.GetActiveSandboxes())
+	p.metrics.SetWorkerHeartbeat(workerID, hb.GetActiveSandboxes(), hb.GetMemoryUsedPct())
 	p.notifyReadyWaiters()
 }
 
@@ -316,3 +316,4 @@ func (p *WorkerPool) Close() error {
 	p.wg.Wait()
 	return firstErr
 }
+

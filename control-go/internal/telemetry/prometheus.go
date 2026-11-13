@@ -13,14 +13,16 @@ import (
 type Metrics struct {
 	registry *prometheus.Registry
 
-	ExecutionsTotal       *prometheus.CounterVec
-	SetupDurationMs       *prometheus.HistogramVec
-	ExecutionDurationMs   *prometheus.HistogramVec
-	ActiveSandboxes       *prometheus.GaugeVec
-	HTTPRequestsTotal     *prometheus.CounterVec
-	IdempotencyOutcomes   *prometheus.CounterVec
-	HITLApprovalsTotal    *prometheus.CounterVec
-	WorkerFailoversTotal  prometheus.Counter
+	ExecutionsTotal        *prometheus.CounterVec
+	SetupDurationUs        *prometheus.HistogramVec
+	ExecutionDurationUs    *prometheus.HistogramVec
+	TeardownDurationUs     *prometheus.HistogramVec
+	ActiveSandboxes        *prometheus.GaugeVec
+	WorkerMemorySaturation *prometheus.GaugeVec
+	HTTPRequestsTotal      *prometheus.CounterVec
+	IdempotencyOutcomes    *prometheus.CounterVec
+	HITLApprovalsTotal     *prometheus.CounterVec
+	WorkerFailoversTotal   prometheus.Counter
 }
 
 // NewMetrics constructs and registers all AegisRun control-plane Prometheus collectors.
@@ -36,30 +38,45 @@ func NewMetrics() *Metrics {
 		ExecutionsTotal: prometheus.NewCounterVec(
 			prometheus.CounterOpts{
 				Name: "aegis_executions_total",
-				Help: "Total sandbox executions partitioned by terminal status and runtime.",
+				Help: "Total sandbox executions partitioned by runtime, terminal status, and tenant_id.",
 			},
-			[]string{"status", "runtime"},
+			[]string{"runtime", "status", "tenant_id"},
 		),
-		SetupDurationMs: prometheus.NewHistogramVec(
+		SetupDurationUs: prometheus.NewHistogramVec(
 			prometheus.HistogramOpts{
-				Name:    "aegis_execution_setup_duration_ms",
-				Help:    "Sandbox cold-start setup overhead reported by workers in milliseconds.",
-				Buckets: []float64{1, 2.5, 5, 10, 15, 20, 25, 35, 50, 100, 250},
+				Name:    "aegis_sandbox_setup_duration_microseconds",
+				Help:    "OverlayFS + cgroup v2 + namespace initialization overhead in microseconds.",
+				Buckets: []float64{1000, 2500, 5000, 10000, 20000, 35000, 50000, 100000},
 			},
 			[]string{"runtime"},
 		),
-		ExecutionDurationMs: prometheus.NewHistogramVec(
+		ExecutionDurationUs: prometheus.NewHistogramVec(
 			prometheus.HistogramOpts{
-				Name:    "aegis_execution_duration_ms",
-				Help:    "User payload execution wall-clock duration in milliseconds.",
-				Buckets: []float64{5, 10, 25, 50, 100, 250, 500, 1000, 2500, 5000, 10000, 30000},
+				Name:    "aegis_sandbox_exec_duration_microseconds",
+				Help:    "User payload runtime duration inside the sandbox in microseconds.",
+				Buckets: []float64{1000, 5000, 10000, 50000, 100000, 500000, 1000000, 5000000},
+			},
+			[]string{"runtime"},
+		),
+		TeardownDurationUs: prometheus.NewHistogramVec(
+			prometheus.HistogramOpts{
+				Name:    "aegis_sandbox_teardown_duration_microseconds",
+				Help:    "Cgroup kill + OverlayFS/tmpfs unmount latency in microseconds.",
+				Buckets: []float64{500, 1000, 2500, 5000, 10000, 25000},
 			},
 			[]string{"runtime"},
 		),
 		ActiveSandboxes: prometheus.NewGaugeVec(
 			prometheus.GaugeOpts{
-				Name: "aegis_control_active_sandboxes",
-				Help: "Current active sandbox count reported by each worker node heartbeat.",
+				Name: "aegis_worker_active_sandboxes",
+				Help: "Real-time concurrent active sandboxes reported per worker node.",
+			},
+			[]string{"worker_node_id"},
+		),
+		WorkerMemorySaturation: prometheus.NewGaugeVec(
+			prometheus.GaugeOpts{
+				Name: "aegis_worker_memory_saturation_ratio",
+				Help: "Worker host memory saturation ratio [0.0, 1.0] reported per worker node.",
 			},
 			[]string{"worker_node_id"},
 		),
@@ -94,9 +111,11 @@ func NewMetrics() *Metrics {
 
 	reg.MustRegister(
 		m.ExecutionsTotal,
-		m.SetupDurationMs,
-		m.ExecutionDurationMs,
+		m.SetupDurationUs,
+		m.ExecutionDurationUs,
+		m.TeardownDurationUs,
 		m.ActiveSandboxes,
+		m.WorkerMemorySaturation,
 		m.HTTPRequestsTotal,
 		m.IdempotencyOutcomes,
 		m.HITLApprovalsTotal,
@@ -119,25 +138,49 @@ func (m *Metrics) Registry() *prometheus.Registry {
 }
 
 // RecordExecution observes execution completion metrics in Prometheus.
-func (m *Metrics) RecordExecution(status, runtime string, setupUs, execUs uint64) {
+func (m *Metrics) RecordExecution(status, runtime, tenantID string, setupUs, execUs, teardownUs uint64) {
 	if m == nil {
 		return
 	}
-	m.ExecutionsTotal.WithLabelValues(status, runtime).Inc()
+	if tenantID == "" {
+		tenantID = "default"
+	}
+	m.ExecutionsTotal.WithLabelValues(runtime, status, tenantID).Inc()
 	if setupUs > 0 {
-		m.SetupDurationMs.WithLabelValues(runtime).Observe(float64(setupUs) / 1000.0)
+		m.SetupDurationUs.WithLabelValues(runtime).Observe(float64(setupUs))
 	}
 	if execUs > 0 {
-		m.ExecutionDurationMs.WithLabelValues(runtime).Observe(float64(execUs) / 1000.0)
+		m.ExecutionDurationUs.WithLabelValues(runtime).Observe(float64(execUs))
+	}
+	if teardownUs > 0 {
+		m.TeardownDurationUs.WithLabelValues(runtime).Observe(float64(teardownUs))
 	}
 }
 
-// SetWorkerActiveSandboxes updates the active sandbox gauge for a worker node.
-func (m *Metrics) SetWorkerActiveSandboxes(workerNodeID string, active uint32) {
+// RecordIdempotentReplay increments the IDEMPOTENT_REPLAY status counter.
+func (m *Metrics) RecordIdempotentReplay(runtime, tenantID string) {
+	if m == nil {
+		return
+	}
+	if tenantID == "" {
+		tenantID = "default"
+	}
+	m.ExecutionsTotal.WithLabelValues(runtime, "IDEMPOTENT_REPLAY", tenantID).Inc()
+}
+
+// SetWorkerHeartbeat updates active sandbox count and memory saturation ratio gauges for a worker node.
+func (m *Metrics) SetWorkerHeartbeat(workerNodeID string, active uint32, memUsedPct float64) {
 	if m == nil {
 		return
 	}
 	m.ActiveSandboxes.WithLabelValues(workerNodeID).Set(float64(active))
+	ratio := memUsedPct / 100.0
+	if ratio < 0 {
+		ratio = 0
+	} else if ratio > 1 {
+		ratio = 1
+	}
+	m.WorkerMemorySaturation.WithLabelValues(workerNodeID).Set(ratio)
 }
 
 // RecordHTTPRequest increments the HTTP request counter.

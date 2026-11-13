@@ -1,0 +1,226 @@
+{
+  "annotations": {
+    "list": []
+  },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "panels": [
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "µs",
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "fillOpacity": 15
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 0,
+        "y": 0
+      },
+      "id": 1,
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": ["lastNotNull", "mean", "max"]
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.50, sum(rate(aegis_sandbox_setup_duration_microseconds_bucket[1m])) by (le))",
+          "legendFormat": "P50 Setup (µs)",
+          "refId": "A"
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(aegis_sandbox_setup_duration_microseconds_bucket[1m])) by (le))",
+          "legendFormat": "P95 Setup (µs)",
+          "refId": "B"
+        },
+        {
+          "expr": "histogram_quantile(0.99, sum(rate(aegis_sandbox_setup_duration_microseconds_bucket[1m])) by (le))",
+          "legendFormat": "P99 Setup (µs)",
+          "refId": "C"
+        }
+      ],
+      "title": "Sandbox Cold-Start Setup Latency (P50 / P95 / P99)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "min": 0,
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 6,
+        "x": 12,
+        "y": 0
+      },
+      "id": 2,
+      "options": {
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "showThresholdLabels": false,
+        "showThresholdMarkers": true
+      },
+      "targets": [
+        {
+          "expr": "max by (worker_node_id) (aegis_worker_active_sandboxes)",
+          "legendFormat": "{{worker_node_id}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Live Active Sandboxes by Worker",
+      "type": "gauge"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "min": 0,
+          "max": 1,
+          "unit": "percentunit"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 6,
+        "x": 18,
+        "y": 0
+      },
+      "id": 3,
+      "options": {
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        }
+      },
+      "targets": [
+        {
+          "expr": "max by (worker_node_id) (aegis_worker_memory_saturation_ratio)",
+          "legendFormat": "{{worker_node_id}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Worker Memory Saturation",
+      "type": "gauge"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 14,
+        "x": 0,
+        "y": 9
+      },
+      "id": 4,
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "values": ["value", "percent"]
+        },
+        "pieType": "donut",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum by (status) (aegis_executions_total)",
+          "legendFormat": "{{status}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Security, Resource Kills & Cache Hit Breakdown",
+      "type": "piechart"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "µs"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 10,
+        "x": 14,
+        "y": 9
+      },
+      "id": 5,
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(aegis_sandbox_exec_duration_microseconds_bucket[1m])) by (le))",
+          "legendFormat": "P95 Payload Exec (µs)",
+          "refId": "A"
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(aegis_sandbox_teardown_duration_microseconds_bucket[1m])) by (le))",
+          "legendFormat": "P95 Teardown (µs)",
+          "refId": "B"
+        }
+      ],
+      "title": "P95 Sandbox Execution & Teardown Latency",
+      "type": "timeseries"
+    }
+  ],
+  "refresh": "5s",
+  "schemaVersion": 39,
+  "tags": ["aegisrun", "sandbox", "security"],
+  "templating": {
+    "list": []
+  },
+  "time": {
+    "from": "now-15m",
+    "to": "now"
+  },
+  "title": "AegisRun Control Plane & Sandbox Telemetry",
+  "uid": "aegis-overview"
+}
