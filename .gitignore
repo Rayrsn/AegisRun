@@ -1,2 +1,48 @@
 **plan**.md
-AGENTS.md
+
+# Rust
+/daemon-rs/target/
+
+# Go
+/control-go/bin/
+*.exe
+*.out
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+*.egg-info/
+/sdk-py/dist/
+/sdk-py/build/
+
+# Environment & OS
+.env
+.DS_Store
+Thumbs.db
+# Rust
+/daemon-rs/target/
+
+# Go
+/control-go/bin/
+*.exe
+*.out
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+*.egg-info/
+/sdk-py/dist/
+/sdk-py/build/
+
+# Environment & OS
+.env
+.DS_Store
+Thumbs.db

@@ -1,0 +1,16 @@
+[package]
+name = "daemon-rs"
+version = "0.1.0"
+edition = "2021"
+description = "AegisRun privileged Linux sandbox worker daemon"
+
+[dependencies]
+prost = "0.13"
+thiserror = "1.0"
+tokio = { version = "1.40", features = ["full"] }
+tonic = "0.12"
+
+[build-dependencies]
+protoc-bin-vendored = "3.0"
+tonic-build = "0.12"
+
