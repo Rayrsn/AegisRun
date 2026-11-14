@@ -2,7 +2,21 @@
 name = "daemon-rs"
 version = "0.1.0"
 edition = "2021"
+rust-version = "1.75"
 description = "AegisRun privileged Linux sandbox worker daemon"
+license = "Apache-2.0"
+readme = "README.md"
+repository = "https://github.com/aegisrun/aegisrun"
+keywords = ["sandbox", "cgroups", "seccomp", "overlayfs", "grpc"]
+categories = ["os::linux-apis", "network-programming", "asynchronous"]
+
+[lib]
+name = "daemon_rs"
+path = "src/lib.rs"
+
+[[bin]]
+name = "daemon-rs"
+path = "src/main.rs"
 
 [dependencies]
 libc = "0.2"
@@ -20,3 +34,9 @@ uuid = { version = "1.10", features = ["v4", "v7"] }
 [build-dependencies]
 protoc-bin-vendored = "3.0"
 tonic-build = "0.12"
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+strip = "symbols"

@@ -6,7 +6,33 @@ build-backend = "hatchling.build"
 name = "aegis-sdk"
 version = "0.1.0"
 description = "AegisRun Python Developer SDK and agent tool wrapper"
+readme = "README.md"
+license = { text = "Apache-2.0" }
+authors = [{ name = "AegisRun Contributors" }]
 requires-python = ">=3.11"
+keywords = [
+  "ai",
+  "agents",
+  "sandbox",
+  "tool-calling",
+  "openai",
+  "anthropic",
+  "seccomp",
+  "cgroups",
+]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Intended Audience :: Developers",
+  "License :: OSI Approved :: Apache Software License",
+  "Operating System :: POSIX :: Linux",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Topic :: Security",
+  "Topic :: Software Development :: Libraries :: Python Modules",
+  "Typing :: Typed",
+]
 dependencies = [
   "httpx>=0.27.0",
   "pydantic>=2.0.0",
@@ -19,6 +45,10 @@ dev = [
   "pytest-asyncio>=0.23.0",
   "ruff>=0.5.0",
 ]
+
+[project.urls]
+Repository = "https://github.com/aegisrun/aegisrun"
+Documentation = "https://github.com/aegisrun/aegisrun/tree/main/sdk-py"
 
 [tool.hatch.build.targets.wheel]
 packages = ["aegis_sdk"]
@@ -33,3 +63,10 @@ warn_unused_configs = true
 target-version = "py311"
 line-length = 100
 
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "strict"
+asyncio_default_fixture_loop_scope = "function"
