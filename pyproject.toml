@@ -1,0 +1,9 @@
+[tool.pyrefly]
+search-path = ["sdk-py"]
+
+[tool.pyright]
+extraPaths = ["sdk-py"]
+
+[tool.mypy]
+mypy_path = "sdk-py"
+
