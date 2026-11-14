@@ -1,4 +1,4 @@
-.PHONY: proto build test lint up down rootfs
+.PHONY: proto build test lint sdk-lint sdk-test redteam bench up down rootfs
 
 PROTO_DIR := proto
 PROTO_FILE := $(PROTO_DIR)/aegis/v1/sandbox.proto
@@ -38,4 +38,18 @@ down:
 
 rootfs:
 	sudo ./deploy/scripts/build-rootfs.sh
+
+sdk-lint:
+	cd sdk-py && ruff check . && mypy aegis_sdk
+	ruff check benchmarks
+
+sdk-test:
+	cd sdk-py && pytest -v
+
+redteam:
+	python3 benchmarks/security_redteam.py --url http://localhost:8080 --api-key aegis-dev-token
+
+bench:
+	python3 benchmarks/vs_docker_bench.py --url http://localhost:8080 --api-key aegis-dev-token --aegis-iterations 500 --concurrency 8
+	k6 run benchmarks/load_test.js
 
