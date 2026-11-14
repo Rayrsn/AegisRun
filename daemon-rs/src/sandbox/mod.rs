@@ -230,6 +230,20 @@ fn normalize_limits(req: &ExecutionRequest) -> NormalizedLimits {
     }
 }
 
+/// Uses `block_in_place` on multi-threaded Tokio runtimes and runs inline on `current_thread`
+/// runtimes (such as default `#[tokio::test]`) where `block_in_place` would panic.
+fn block_in_place_if_multithread<F, R>(f: F) -> R
+where
+    F: FnOnce() -> R,
+{
+    match tokio::runtime::Handle::try_current() {
+        Ok(handle) if handle.runtime_flavor() == tokio::runtime::RuntimeFlavor::MultiThread => {
+            tokio::task::block_in_place(f)
+        }
+        _ => f(),
+    }
+}
+
 /// Runs all 6 sandbox stages and streams lifecycle + stdio events to `event_tx`.
 pub async fn execute_in_sandbox(
     config: Arc<DaemonConfig>,
@@ -275,7 +289,7 @@ pub async fn execute_in_sandbox(
     )
     .await;
 
-    let teardown_res = tokio::task::block_in_place(|| guard.teardown());
+    let teardown_res = block_in_place_if_multithread(|| guard.teardown());
     drop(exec_permit);
 
     match (outcome, teardown_res) {
@@ -403,7 +417,7 @@ async fn run_stages(
     let limits = normalize_limits(req);
 
     // Stage 1 & 2 & 3/4: Setup mounts, cgroup, and spawn isolated process off the async poller.
-    let (setup_duration_us, exec_start, spawned) = tokio::task::block_in_place(
+    let (setup_duration_us, exec_start, spawned) = block_in_place_if_multithread(
         || -> Result<(u64, Instant, namespace::SpawnedProcess), SandboxError> {
             let setup_start = Instant::now();
             let mounts = fs_mount::setup_mounts(
