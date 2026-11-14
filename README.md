@@ -112,15 +112,30 @@ pip install "git+https://github.com/Rayrsn/AegisRun.git#subdirectory=sdk-py"
 
 ### 2. Install the AegisRun Agent Skill (`SKILL.md`)
 
+Workspace-local discovery is already built into this repository for **Antigravity / `agy`** ([`.agents/skills/aegisrun/SKILL.md`](.agents/skills/aegisrun/SKILL.md)) and **OpenCode** ([`.opencode/skills/aegisrun/SKILL.md`](.opencode/skills/aegisrun/SKILL.md)). To install globally across all workspaces:
+
 ```bash
-# Universal skills CLI (Claude Code, Cursor, Codex, etc.):
+# Universal skills CLI (OpenCode, Claude Code, Cursor, Codex, etc.):
 npx skills add Rayrsn/AegisRun
 
-# Claude Code (one-liner):
-mkdir -p ~/.claude/skills/aegisrun && curl -fsSL https://raw.githubusercontent.com/Rayrsn/AegisRun/main/skills/aegisrun/SKILL.md -o ~/.claude/skills/aegisrun/SKILL.md
-
-# Antigravity global skill (note: cloning this repo also auto-loads .agents/skills/aegisrun/SKILL.md):
+# Antigravity (agy CLI & Antigravity IDE/App) — Linux / WSL2 / macOS:
 mkdir -p ~/.gemini/config/skills/aegisrun && curl -fsSL https://raw.githubusercontent.com/Rayrsn/AegisRun/main/skills/aegisrun/SKILL.md -o ~/.gemini/config/skills/aegisrun/SKILL.md
+
+# OpenCode — Linux / WSL2 / macOS:
+mkdir -p ~/.config/opencode/skills/aegisrun && curl -fsSL https://raw.githubusercontent.com/Rayrsn/AegisRun/main/skills/aegisrun/SKILL.md -o ~/.config/opencode/skills/aegisrun/SKILL.md
+
+# Claude Code — Linux / WSL2 / macOS:
+mkdir -p ~/.claude/skills/aegisrun && curl -fsSL https://raw.githubusercontent.com/Rayrsn/AegisRun/main/skills/aegisrun/SKILL.md -o ~/.claude/skills/aegisrun/SKILL.md
+```
+
+Windows PowerShell global install for **Antigravity (`agy`)** & **OpenCode**:
+
+```powershell
+# Antigravity (agy CLI & Antigravity IDE/App):
+New-Item -ItemType Directory -Force "$HOME\.gemini\config\skills\aegisrun" | Out-Null; irm https://raw.githubusercontent.com/Rayrsn/AegisRun/main/skills/aegisrun/SKILL.md -OutFile "$HOME\.gemini\config\skills\aegisrun\SKILL.md"
+
+# OpenCode:
+New-Item -ItemType Directory -Force "$HOME\.config\opencode\skills\aegisrun" | Out-Null; irm https://raw.githubusercontent.com/Rayrsn/AegisRun/main/skills/aegisrun/SKILL.md -OutFile "$HOME\.config\opencode\skills\aegisrun\SKILL.md"
 ```
 
 ### 3. One-Liner Backend Stack Launch (Linux / WSL2 Root)
@@ -133,9 +148,9 @@ git clone https://github.com/Rayrsn/AegisRun.git && cd AegisRun && sudo bash dep
 
 ### 4. Copy-Paste Prompt for AI Coding Agents
 
-Give this prompt to Claude Code, Antigravity, Cursor, or any autonomous agent:
+Give this prompt to **Antigravity (`agy`)**, **OpenCode**, Claude Code, or Cursor:
 
-> Install `aegis-sdk` (`pip install "git+https://github.com/Rayrsn/AegisRun.git#subdirectory=sdk-py"`), clone `https://github.com/Rayrsn/AegisRun.git` on a Linux/WSL2 host, start the sandbox backend with `sudo bash deploy/scripts/quickstart.sh`, verify `http://127.0.0.1:8080/readyz` reports `workers_healthy >= 1`, and read `skills/aegisrun/SKILL.md` for how to define `@sandbox_tool` functions, export OpenAI/Anthropic schemas, and handle `.to_llm_observation()` self-correction errors.
+> Install `aegis-sdk` (`pip install "git+https://github.com/Rayrsn/AegisRun.git#subdirectory=sdk-py"`), clone `https://github.com/Rayrsn/AegisRun.git` on a Linux/WSL2 host, start the sandbox backend with `sudo bash deploy/scripts/quickstart.sh`, verify `http://127.0.0.1:8080/readyz` reports `workers_healthy >= 1`, and follow the `aegisrun` skill (`skills/aegisrun/SKILL.md`) for how to define `@sandbox_tool` functions, export OpenAI/Anthropic schemas, and handle `.to_llm_observation()` self-correction errors.
 
 ---
 
@@ -212,8 +227,9 @@ ls -1 /sys/fs/cgroup/aegis.slice/ 2>/dev/null | grep "^exec-" | wc -l
 | [`sdk-py/`](sdk-py/README.md) | Python 3.11+ developer SDK (`@sandbox_tool`, OpenAI/Anthropic schema generator, sync/async SSE clients) |
 | [`benchmarks/`](benchmarks/README.md) | 7-vector red-team suite, AegisRun vs Docker cold-start benchmark, and `k6` load test |
 | [`deploy/`](deploy/README.md) | Docker Compose backing stack (`Postgres`, `Redis`, `Prometheus`, `Grafana`), rootfs builder, and [`quickstart.sh`](deploy/scripts/quickstart.sh) |
-| [`skills/aegisrun/SKILL.md`](skills/aegisrun/SKILL.md) | Reusable AI agent skill for Claude Code, `npx skills`, Codex, and Cursor (`SKILL.md` standard) |
-| [`.agents/skills/aegisrun/SKILL.md`](.agents/skills/aegisrun/SKILL.md) | Workspace-scoped agent skill auto-discovered by Antigravity and repo-local agent tools |
+| [`skills/aegisrun/SKILL.md`](skills/aegisrun/SKILL.md) | Reusable AI agent skill for `npx skills`, OpenCode, Claude Code, Codex, and Cursor |
+| [`.agents/skills/aegisrun/SKILL.md`](.agents/skills/aegisrun/SKILL.md) | Workspace-scoped agent skill auto-discovered by Antigravity (`agy` CLI & IDE) |
+| [`.opencode/skills/aegisrun/SKILL.md`](.opencode/skills/aegisrun/SKILL.md) | Workspace-scoped agent skill auto-discovered by OpenCode |
 | [`migrations/`](migrations/README.md) | PostgreSQL execution & HITL approval schema migrations (`0001_init_executions`) |
 | [`Makefile`](Makefile) | Unified build, codegen, lint, test, rootfs, red-team, and benchmark targets |
 | [`.env.example`](.env.example) | Environment variable template matching `daemon-rs`, `control-go`, and `sdk-py` defaults |
