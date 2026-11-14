@@ -150,7 +150,7 @@ git clone https://github.com/Rayrsn/AegisRun.git && cd AegisRun && sudo bash dep
 
 Give this prompt to **Antigravity (`agy`)**, **OpenCode**, Claude Code, or Cursor:
 
-> Install `aegis-sdk` (`pip install "git+https://github.com/Rayrsn/AegisRun.git#subdirectory=sdk-py"`), clone `https://github.com/Rayrsn/AegisRun.git` on a Linux/WSL2 host, start the sandbox backend with `sudo bash deploy/scripts/quickstart.sh`, verify `http://127.0.0.1:8080/readyz` reports `workers_healthy >= 1`, and follow the `aegisrun` skill (`skills/aegisrun/SKILL.md`) for how to define `@sandbox_tool` functions, export OpenAI/Anthropic schemas, and handle `.to_llm_observation()` self-correction errors.
+> Install `aegis-sdk` (`pip install "git+https://github.com/Rayrsn/AegisRun.git#subdirectory=sdk-py"`), clone `https://github.com/Rayrsn/AegisRun.git` on a Linux/WSL2 host, start the sandbox backend with `sudo bash deploy/scripts/quickstart.sh`, verify `http://127.0.0.1:8080/readyz` returns `{"status":"ready"}`, and follow the `aegisrun` skill (`skills/aegisrun/SKILL.md`) for how to define `@sandbox_tool` functions, export OpenAI/Anthropic schemas, and handle `.to_llm_observation()` self-correction errors.
 
 ---
 

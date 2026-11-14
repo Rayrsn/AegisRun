@@ -51,7 +51,7 @@ Verify readiness:
 
 ```bash
 curl -fsS http://127.0.0.1:8080/readyz
-# Expected: {"status":"ready","workers_healthy":1}
+# Expected: HTTP 200 {"status":"ready"}
 ```
 
 > **Windows + WSL2 NAT note:** If running Python on Windows against a WSL2-hosted stack and `localhost:8080` refuses connections, point `AEGIS_CONTROL_URL` at the WSL2 `eth0` IP (`wsl -- ip -4 -br addr show eth0`).

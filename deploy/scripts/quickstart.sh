@@ -71,6 +71,11 @@ fi
 cd "${REPO_ROOT}"
 mkdir -p /run /var/log
 
+if body="$(curl -fsS http://127.0.0.1:8080/readyz 2>/dev/null)" && [[ "${body}" == *'"status":"ready"'* ]]; then
+  echo "[aegis] Stack already running and ready: ${body}"
+  exit 0
+fi
+
 # 1. Start Redis / Valkey on 127.0.0.1:6379
 redis_ping() {
   if command -v valkey-cli >/dev/null 2>&1; then
@@ -201,10 +206,10 @@ AEGIS_HTTP_ADDR="${AEGIS_HTTP_ADDR:-0.0.0.0:8080}" \
   "${CONTROL_BIN}" >"${CONTROL_LOG}" 2>&1 &
 echo $! > "${CONTROL_PID_FILE}"
 
-# 6. Poll /readyz until workers_healthy >= 1
+# 6. Poll /readyz until control-go reports status=ready (checks Redis, Postgres, and >= 1 healthy worker)
 echo "[aegis] Waiting for http://127.0.0.1:8080/readyz ..."
 for _ in $(seq 1 40); do
-  if body="$(curl -fsS http://127.0.0.1:8080/readyz 2>/dev/null)" && [[ "${body}" =~ \"workers_healthy\":[[:space:]]*[1-9] ]]; then
+  if body="$(curl -fsS http://127.0.0.1:8080/readyz 2>/dev/null)" && [[ "${body}" == *'"status":"ready"'* ]]; then
     echo "[aegis] Stack ready: ${body}"
     echo "[aegis] Logs: ${DAEMON_LOG}, ${CONTROL_LOG}"
     echo "[aegis] Stop with: sudo bash deploy/scripts/quickstart.sh --stop"
