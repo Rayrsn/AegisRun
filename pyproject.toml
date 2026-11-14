@@ -1,9 +1,34 @@
+[tool.uv.workspace]
+members = ["sdk-py"]
+
 [tool.pyrefly]
+project-includes = ["sdk-py", "benchmarks"]
 search-path = ["sdk-py"]
+python-version = "3.11"
 
 [tool.pyright]
+include = ["sdk-py", "benchmarks"]
 extraPaths = ["sdk-py"]
+pythonVersion = "3.11"
+typeCheckingMode = "strict"
 
 [tool.mypy]
+python_version = "3.11"
 mypy_path = "sdk-py"
+strict = true
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
 
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+src = ["sdk-py", "benchmarks"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.pytest.ini_options]
+testpaths = ["sdk-py/tests"]
+asyncio_mode = "strict"
+asyncio_default_fixture_loop_scope = "function"
