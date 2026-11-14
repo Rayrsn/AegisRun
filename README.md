@@ -158,3 +158,20 @@ make sdk-test
 mount | grep "/run/aegis/sandboxes" | wc -l
 ls -1 /sys/fs/cgroup/aegis.slice/ 2>/dev/null | grep "^exec-" | wc -l
 ```
+
+---
+
+## Repository Layout & Component Guides
+
+| Directory / File | Description |
+| :--- | :--- |
+| [`proto/`](proto/README.md) | Protobuf v3 contract (`aegis/v1/sandbox.proto`) and `make proto` codegen guide |
+| [`daemon-rs/`](daemon-rs/README.md) | Privileged Rust Linux sandbox worker daemon (`OverlayFS`, `cgroups v2`, namespaces, `seccomp-bpf`) |
+| [`control-go/`](control-go/README.md) | Go REST/SSE API gateway, atomic Redis Lua idempotency/rate limiting, HITL state machine, worker router |
+| [`sdk-py/`](sdk-py/README.md) | Python 3.11+ developer SDK (`@sandbox_tool`, OpenAI/Anthropic schema generator, sync/async SSE clients) |
+| [`benchmarks/`](benchmarks/README.md) | 7-vector red-team suite, AegisRun vs Docker cold-start benchmark, and `k6` load test |
+| [`deploy/`](deploy/README.md) | Docker Compose backing stack (`Postgres`, `Redis`, `Prometheus`, `Grafana`) and Alpine rootfs builder |
+| [`migrations/`](migrations/README.md) | PostgreSQL execution & HITL approval schema migrations (`0001_init_executions`) |
+| [`Makefile`](Makefile) | Unified build, codegen, lint, test, rootfs, red-team, and benchmark targets |
+| [`.env.example`](.env.example) | Environment variable template matching `daemon-rs`, `control-go`, and `sdk-py` defaults |
+| [`LICENSE`](LICENSE) | Apache License 2.0 |
